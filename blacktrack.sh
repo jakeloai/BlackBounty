@@ -2,26 +2,30 @@
 
 # --- Help Menu ---
 show_help() {
-    echo "Usage: ./blacktrack.sh [target_file] [options]"
+    echo "Usage: ./blacktrack.sh [options]"
     echo ""
     echo "Options:"
-    echo "  -r, --include-root    Automatically merge root domains from target file after discovery"
-    echo "  -h, --help            Show this help message and exit"
+    echo "  -d <file>    Domain file (Static single targets like example.com, dev.example.com. Skips Subfinder)"
+    echo "  -w <file>    Wildcard file (Patterns like *.example.com, dev.*.example.com. Runs Subfinder)"
+    echo "  -h, --help   Show this help message"
     echo ""
-    echo "Example:"
-    echo "  ./blacktrack.sh targets.txt --include-root"
+    echo "Examples:"
+    echo "  1. Domain only:    ./blacktrack.sh -d domains.txt"
+    echo "  2. Wildcard only:  ./blacktrack.sh -w wildcards.txt"
+    echo "  3. Both targets:   ./blacktrack.sh -d domains.txt -w wildcards.txt"
     exit 0
 }
 
 # --- Argument Parsing ---
-INCLUDE_ROOT=false
-TARGET_FILE=""
+DOMAIN_FILE=""
+WILDCARD_FILE=""
 
-while [[ "$#" -gt 0 ]]; do
-    case $1 in
-        -r|--include-root) INCLUDE_ROOT=true; shift ;;
-        -h|--help) show_help ;;
-        *) TARGET_FILE=$1; shift ;;
+while getopts "d:w:h" opt; do
+    case $opt in
+        d) DOMAIN_FILE=$OPTARG ;;
+        w) WILDCARD_FILE=$OPTARG ;;
+        h) show_help ;;
+        *) show_help ;;
     esac
 done
 
@@ -29,19 +33,21 @@ done
 DATE=$(date +%Y%m%d_%H%M)
 OUTPUT_DIR="recon_$DATE"
 OUTPUT_FILE="$OUTPUT_DIR/nuclei_results.txt"
+FINAL_TARGETS="$OUTPUT_DIR/all_targets.txt"
+TEMP_DOMAINS="$OUTPUT_DIR/domains_to_scan.txt"
+TEMP_REGEX="$OUTPUT_DIR/grep_patterns.txt"
 
-# --- Error Handling & Environment Check ---
-
-if [ -z "$TARGET_FILE" ]; then
-    echo "[!] Error: No target file specified."
+# --- Validation ---
+if [[ -z "$DOMAIN_FILE" && -z "$WILDCARD_FILE" ]]; then
+    echo "[!] Error: You must provide at least -d (Domain) or -w (Wildcard) file."
     show_help
 fi
 
-if [ ! -f "$TARGET_FILE" ]; then
-    echo "[!] Error: File '$TARGET_FILE' not found."
-    exit 1
-fi
+# Check if files exist
+[[ -n "$DOMAIN_FILE" && ! -f "$DOMAIN_FILE" ]] && { echo "[!] Error: Domain file '$DOMAIN_FILE' not found."; exit 1; }
+[[ -n "$WILDCARD_FILE" && ! -f "$WILDCARD_FILE" ]] && { echo "[!] Error: Wildcard file '$WILDCARD_FILE' not found."; exit 1; }
 
+# Dependency Check
 tools=("subfinder" "httpx-toolkit" "katana" "nuclei" "notify")
 for tool in "${tools[@]}"; do
     if ! command -v "$tool" &> /dev/null; then
@@ -50,45 +56,73 @@ for tool in "${tools[@]}"; do
     fi
 done
 
-mkdir -p "$OUTPUT_DIR" || { echo "[!] Failed to create directory $OUTPUT_DIR"; exit 1; }
+mkdir -p "$OUTPUT_DIR"
 
-echo "[+] Initializing Pipeline: $TARGET_FILE"
-echo "[!] Include Root Domain: $INCLUDE_ROOT"
-echo "[!] Results will be saved in: $OUTPUT_DIR"
+echo "[+] Starting Pipeline"
+[[ -n "$DOMAIN_FILE" ]] && echo "[+] Domain File: $DOMAIN_FILE"
+[[ -n "$WILDCARD_FILE" ]] && echo "[+] Wildcard File: $WILDCARD_FILE"
 
-# --- Phase 1: Subdomain Discovery ---
-echo "[*] Phase 1: Passive Subdomain Enumeration (Subfinder)..."
-subfinder -dL "$TARGET_FILE" -silent -o "$OUTPUT_DIR/subs_found.txt"
+# --- Phase 1: Wildcard Pattern Processing ---
+if [[ -n "$WILDCARD_FILE" ]]; then
+    echo "[*] Phase 1: Processing Wildcard targets..."
+    
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        if [[ "$line" == *"\*"* ]]; then
+            # Extract base domain for Subfinder (e.g., dev.*.example.com -> example.com)
+            base_domain=$(echo "$line" | sed 's/.*\*//; s/^\.//')
+            echo "$base_domain" >> "$TEMP_DOMAINS"
+            
+            # Convert wildcard to Regex for Grep
+            regex=$(echo "$line" | sed 's/\./\\./g; s/\*/[a-zA-Z0-9.-]+/g' | sed 's/^/^/; s/$/$/')
+            echo "$regex" >> "$TEMP_REGEX"
+        else
+            # If a normal domain accidentally slips into the wildcard file
+            echo "$line" >> "$TEMP_DOMAINS"
+            regex=$(echo "$line" | sed 's/\./\\./g' | sed 's/^/^/; s/$/$/')
+            echo "$regex" >> "$TEMP_REGEX"
+        fi
+    done < "$WILDCARD_FILE"
 
-# --- Logic: Automated Merging ---
-if [ "$INCLUDE_ROOT" = true ]; then
-    echo "[*] Mode: Merging root domains with discovered subdomains..."
-    cat "$TARGET_FILE" "$OUTPUT_DIR/subs_found.txt" | sort -u > "$OUTPUT_DIR/all_targets.txt"
-else
-    echo "[*] Mode: Using only discovered subdomains..."
-    cp "$OUTPUT_DIR/subs_found.txt" "$OUTPUT_DIR/all_targets.txt"
+    # Run Subfinder on extracted base domains
+    sort -u "$TEMP_DOMAINS" -o "$TEMP_DOMAINS"
+    echo "[*] Running Subfinder on base domains..."
+    subfinder -dL "$TEMP_DOMAINS" -silent -o "$OUTPUT_DIR/raw_subs.txt"
+
+    # Apply Grep Filter based on user wildcard patterns
+    echo "[*] Filtering results based on wildcard patterns..."
+    grep -E -f "$TEMP_REGEX" "$OUTPUT_DIR/raw_subs.txt" > "$OUTPUT_DIR/filtered_subs.txt"
 fi
 
-if [ ! -s "$OUTPUT_DIR/all_targets.txt" ]; then
-    echo "[!] Warning: No targets found after Phase 1. Exiting."
+# --- Phase 2: Final Target Merging ---
+echo "[*] Merging Domain and Wildcard results..."
+if [[ -n "$DOMAIN_FILE" && -n "$WILDCARD_FILE" ]]; then
+    cat "$DOMAIN_FILE" "$OUTPUT_DIR/filtered_subs.txt" | sort -u > "$FINAL_TARGETS"
+elif [[ -n "$DOMAIN_FILE" ]]; then
+    cp "$DOMAIN_FILE" "$FINAL_TARGETS"
+else
+    cp "$OUTPUT_DIR/filtered_subs.txt" "$FINAL_TARGETS"
+fi
+
+if [ ! -s "$FINAL_TARGETS" ]; then
+    echo "[!] Warning: No targets to process. Exiting."
     exit 0
 fi
 
-# --- Phase 2: Live Host Probing ---
-echo "[*] Phase 2: Identifying Alive Hosts (Httpx)..."
-cat "$OUTPUT_DIR/all_targets.txt" | httpx-toolkit -silent -fc 404 -o "$OUTPUT_DIR/alive.txt"
+# --- Phase 3: Live Host Probing ---
+echo "[*] Phase 3: Identifying Alive Hosts (Httpx)..."
+cat "$FINAL_TARGETS" | httpx-toolkit -silent -fc 404 -o "$OUTPUT_DIR/alive.txt"
 
 if [ ! -s "$OUTPUT_DIR/alive.txt" ]; then
     echo "[!] Warning: No alive hosts found."
     exit 0
 fi
 
-# --- Phase 3: Endpoint Discovery ---
-echo "[*] Phase 3: Deep Crawling (Katana)..."
+# --- Phase 4: Endpoint Discovery (Katana) ---
+echo "[*] Phase 4: Deep Crawling (Katana)..."
 cat "$OUTPUT_DIR/alive.txt" | katana -silent -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
 
-# --- Phase 4: Vulnerability Scanning ---
-echo "[*] Phase 4: Running Nuclei Scan (Low to Critical)..."
+# --- Phase 5: Vulnerability Scanning (Nuclei) ---
+echo "[*] Phase 5: Running Nuclei Scan..."
 if [ -s "$OUTPUT_DIR/urls.txt" ]; then
     cat "$OUTPUT_DIR/urls.txt" | nuclei \
         -t ~/nuclei-templates \
@@ -101,4 +135,4 @@ else
     echo "[!] No URLs found to scan."
 fi
 
-echo "[+] Pipeline Finished. Check $OUTPUT_FILE for findings."
+echo "[+] Pipeline Finished. Results saved to: $OUTPUT_FILE"
