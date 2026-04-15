@@ -33,7 +33,7 @@ If you are seeing this tool, congrats. You are now part of an elite circle. Howe
 
 * **Caution**: When gathering templates from other hackers, **always** audit the code.
 * **Hackback Protection**: Malicious actors often hide **"hackback"** code (obfuscated JS or malicious shell commands) within innocent-looking YAML templates. 
-* **Rule**: Always grep for suspicious strings (`wasm`, `Uint8Array`, or local file execution) before running new community templates on your local machine. Stay safe.
+* **Rule**: Always grep for suspicious strings before running new community templates on your local machine. Stay safe.
 
 ## ⚡ Execution
 ```bash
