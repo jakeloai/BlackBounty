@@ -34,16 +34,12 @@ cat "$OUTPUT_DIR/subs.txt" | httpx -silent -fc 404,403 -o "$OUTPUT_DIR/alive.txt
 echo -e "${G}[*] Phase 3: Deep Crawling (Katana)...${NC}"
 cat "$OUTPUT_DIR/alive.txt" | katana -silent -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
 
-# --- Phase 4: Vulnerability Scanning ---
-echo -e "${G}[*] Phase 4: Running Nuclei with Expert Templates...${NC}"
-# Integrates official, expert, and custom newest folders
+# Phase 4: Running Nuclei with ALL templates (Official + Community + JakeLo)
 cat "$OUTPUT_DIR/urls.txt" | nuclei \
     -t ~/nuclei-templates \
-    -t ~/lab/black-nuclei/expert-templates \
-    -t ~/lab/black-nuclei/newest \
     -as \
     -itags exploit,cve,lfi,ssrf,sqli,rce,config \
-    -severity critical,high,medium \
+    -severity critical,high \
     -rl 100 -bs 25 -c 15 \
     -et tags/dos \
     -silent -stream -o "$OUTPUT_FILE" | notify -p discord -bulk
