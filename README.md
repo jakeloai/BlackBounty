@@ -1,112 +1,54 @@
-# 🛡️ BlackBounty
-**Hunter : Jake**
+# README.md
 
-**BlackBounty** is an enterprise-grade, automated reconnaissance and vulnerability scanning pipeline. It is specifically engineered for **large-scale bug hunting** where bypassing WAFs, avoiding IP bans, and receiving real-time alerts are critical to success.
+# 🛡️ BlackTrack - Large Scale Vulnerability Pipeline
+**The Core Recon Engine of JakeLo.ai**
 
----
+## 🚀 Overview
+**BlackTrack** is a high-performance, automated reconnaissance and vulnerability scanning pipeline designed for professional bug bounty hunters. This tool is built on the principle of **Information Asymmetry**—providing you with custom intelligence that standard scans miss.
 
-## ⚙️ How It Works
+It integrates the best of the hacker community (**ProjectDiscovery**, **Geeknik**, **DhiyaneshDK**) along with **JakeLo.ai self-custom templates** for the latest N-day vulnerabilities.
 
-BlackBounty orchestrates a multi-stage security workflow while maintaining a "Zero-Exposure" profile:
+## 🛠️ Installation & Integration
+To use this engine, you must manually sync the templates provided in this repo to your local Nuclei templates directory.
 
-1.  **Passive Recon**: Deep subdomain discovery using `subfinder`.
-2.  **Live Probing**: Validates active web servers using `httpx-toolkit` (optimized for Kali Linux).
-3.  **Deep Crawling**: Uses `katana` to map endpoints and hidden parameters.
-4.  **Universal Scanning Engine**: Runs `Nuclei` with a hybrid logic—combining technology-based auto-scanning (`-as`) with mandatory exploit tag enforcement.
-5.  **Smart Alerting**: Filters noisy reconnaissance data and only pings your **Discord** when actual vulnerabilities are found.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/jakeloai/BlackTrack/
+   cd BlackTrack
+   ```
+2. **Merge Templates:**
+   Move the contents of the `black-nuclei/` directory to your local nuclei folder (typically `~/nuclei-templates/`):
+   ```bash
+   # Merging specialized templates into your local environment
+   cp -r black-nuclei/* ~/nuclei-templates/
+   ```
+3. **Setup Engine:**
+   Ensure `blacktrack.sh` is executable:
+   ```bash
+   chmod +x blacktrack.sh
+   ```
 
----
+## ⚠️ The Hunter's Code: Safety First
+If you are seeing this tool, congrats. You are now part of an elite circle. However, in bug bounty hunting, trust is a luxury you cannot afford.
 
-## 🚀 Installation & Setup
+* **Caution**: When gathering templates from other hackers, **always** audit the code.
+* **Hackback Protection**: Malicious actors often hide **"hackback"** code (obfuscated JS or malicious shell commands) within innocent-looking YAML templates. 
+* **Rule**: Always grep for suspicious strings (`wasm`, `Uint8Array`, or local file execution) before running new community templates on your local machine. Stay safe.
 
-### 1. Clone and Prepare
+## ⚡ Execution
 ```bash
-chmod +x install.sh blackbounty.sh
-sudo ./install.sh
+./blacktrack.sh targets.txt
 ```
 
-### 2. Configure Discord Real-Time Alerts (CRITICAL)
-BlackBounty uses ProjectDiscovery's `notify` tool to send findings. You must configure your Discord Webhook properly for the script to alert you.
-
-**Step A: Get your Discord Webhook URL**
-* Go to **Discord** > **Server Settings** > **Integrations** > **Webhooks**.
-* Create a **New Webhook**, name it "BlackBounty", and **Copy Webhook URL**.
-
-**Step B: Configure the Provider File**
-Create or edit the configuration file at `~/.config/notify/provider-config.yaml`:
-
-```bash
-mkdir -p ~/.config/notify/
-nano ~/.config/notify/provider-config.yaml
-```
-
-**Step C: Paste the following config** (Replace the URL with yours):
-```yaml
-discord:
-  - id: "discord"
-    discord_webhook_url: "https://discord.com/api/webhooks/your_webhook_id/your_webhook_token"
-```
-
-**Step D: Test the Connection**
-```bash
-echo "BlackBounty Notify Test" | notify -p discord
-```
-*If your Discord "pings", you are ready to hunt.*
+## 🏗️ Technical Workflow
+1. **Passive Discovery**: Exhaustive subdomain gathering via multiple sources.
+2. **Active Probing**: Validating alive hosts and filtering out noise (404/403).
+3. **Endpoint Extraction**: Deep crawling with Katana to find hidden parameters and API endpoints.
+4. **Targeted Scanning**: Running multi-source templates with OOB (Interactsh) support for maximum impact.
 
 ---
 
-## 🎯 Usage
+### 💡 JakeLo.ai Philosophy
+"Information is power, but verified information is profit." 
 
-To start a new hunting session, provide a file containing your target root domains:
-
-**targets.txt**
-```text
-example.com
-target-site.net
-```
-
-**Run the command:**
-```bash
-./blackbounty.sh targets.txt
-```
-
----
-
-## 🛠 Vulnerability Logic (The Nuclei Phase)
-
-BlackBounty doesn't just "run tools"; it uses a **Universal Scanning Command** designed to hit both modern and legacy systems (like `vulnweb` targets):
-
-```bash
-cat urls.txt | nuclei \
-    -as -itags cve,exploit,lfi,ssrf,sqli,rce,config \
-    -severity critical,high,medium \
-    -silent -stream -bs 50 -c 25 \
-    -o results.txt | notify -p discord -bulk
-```
-
-* **`-as`**: Auto-detects tech stacks to save time.
-* **`-itags`**: Forcefully runs high-value tags (SQLi, XSS, RCE) even if tech detection fails.
-* **`-bulk`**: Bundles multiple findings into one Discord message to prevent API rate-limits.
-* **`-o results.txt`**: Local backup in case Discord fails.
-
-
-
----
-
-## 📂 Output Files
-
-| File | Description |
-| :--- | :--- |
-| `subs.txt` | All unique subdomains discovered. |
-| `alive.txt` | Hosts responding to HTTP/HTTPS. |
-| `urls.txt` | Deep endpoints crawled by Katana. |
-| `results.txt` | **The Loot.** Final vulnerability report (Critical/High/Medium). |
-
----
-
-## ⚠️ Safety & Ethics
-* **Ethics**: Only use this tool on domains authorized by Bug Bounty programs.
-* **Noise**: Be aware that `-bs 50` and `-c 25` are fast. If you get blocked, lower these numbers.
-* **Privacy**: Never share your `provider-config.yaml` as it contains your private Discord tokens.
-
-**Good hunting, Jake.**
+Use **BlackTrack** to automate the tedious work, so you can focus on the manual PoC that leads to the bounty. Stay sharp, stay safe, and happy hunting.
