@@ -26,3 +26,46 @@ Run the installation script to set up all dependencies (Go, Subfinder, HTTPX, Nu
 ```bash
 chmod +x install.sh
 ./install.sh
+```
+
+---
+
+## 🎯 Usage
+
+Prepare a list of root domains in a text file:
+
+**targets.txt**
+```text
+example.com
+target-app.net
+bugbounty-program.org
+```
+
+**Start the Hunt:**
+```bash
+blackbounty targets.txt
+```
+
+---
+
+## 📂 Output Structure
+
+All results are organized in the `bounty_output/` directory:
+
+- `raw_proxies.txt`: All gathered proxy nodes.
+- `valid_proxies.txt`: Verified working proxies used for the current session.
+- `01_subs_raw.txt`: Unique subdomains discovered.
+- `02_alive_hosts.txt`: Active web targets.
+- `03_vulns.txt`: Final vulnerability report.
+
+---
+
+## ⚠️ Disclaimer
+This tool is for educational purposes and authorized Bug Bounty programs only. The hunter (Jake) is not responsible for any misuse or damage caused by this script.
+
+## Quick Start Guide
+1.  Place `BlackBounty.sh`, `install.sh`, and your `targets.txt` in the same folder.
+2.  Run `sudo ./install.sh`.
+3.  Type `blackbounty targets.txt` and watch the automated pipeline execute.
+
+This setup ensures that your identity is masked from the very first subdomain request. Since you are doing large-scale hunting, would you like me to add a **"Resume"** feature to the script so it can pick up where it left off if the connection drops?
