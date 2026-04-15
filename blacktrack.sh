@@ -1,27 +1,47 @@
 #!/bin/bash
 
+# --- Help Menu ---
+show_help() {
+    echo "Usage: ./blacktrack.sh [target_file] [options]"
+    echo ""
+    echo "Options:"
+    echo "  -r, --include-root    Automatically merge root domains from target file after discovery"
+    echo "  -h, --help            Show this help message and exit"
+    echo ""
+    echo "Example:"
+    echo "  ./blacktrack.sh targets.txt --include-root"
+    exit 0
+}
+
+# --- Argument Parsing ---
+INCLUDE_ROOT=false
+TARGET_FILE=""
+
+while [[ "$#" -gt 0 ]]; do
+    case $1 in
+        -r|--include-root) INCLUDE_ROOT=true; shift ;;
+        -h|--help) show_help ;;
+        *) TARGET_FILE=$1; shift ;;
+    esac
+done
+
 # --- Variable Initialization ---
-TARGET_FILE=$1
 DATE=$(date +%Y%m%d_%H%M)
 OUTPUT_DIR="recon_$DATE"
 OUTPUT_FILE="$OUTPUT_DIR/nuclei_results.txt"
 
 # --- Error Handling & Environment Check ---
 
-# 1. Input Validation
 if [ -z "$TARGET_FILE" ]; then
     echo "[!] Error: No target file specified."
-    echo "Usage: ./blacktrack.sh targets.txt"
-    exit 1
+    show_help
 fi
 
-# 2. Check if file exists
 if [ ! -f "$TARGET_FILE" ]; then
     echo "[!] Error: File '$TARGET_FILE' not found."
     exit 1
 fi
 
-# 3. Dependency Check
 tools=("subfinder" "httpx-toolkit" "katana" "nuclei" "notify")
 for tool in "${tools[@]}"; do
     if ! command -v "$tool" &> /dev/null; then
@@ -30,25 +50,33 @@ for tool in "${tools[@]}"; do
     fi
 done
 
-# Create output directory
 mkdir -p "$OUTPUT_DIR" || { echo "[!] Failed to create directory $OUTPUT_DIR"; exit 1; }
 
 echo "[+] Initializing Pipeline: $TARGET_FILE"
+echo "[!] Include Root Domain: $INCLUDE_ROOT"
 echo "[!] Results will be saved in: $OUTPUT_DIR"
 
 # --- Phase 1: Subdomain Discovery ---
-# Optimized: Using -dL only for large targets to prevent crashes
 echo "[*] Phase 1: Passive Subdomain Enumeration (Subfinder)..."
-subfinder -dL "$TARGET_FILE" -silent -o "$OUTPUT_DIR/subs.txt"
+subfinder -dL "$TARGET_FILE" -silent -o "$OUTPUT_DIR/subs_found.txt"
 
-if [ ! -s "$OUTPUT_DIR/subs.txt" ]; then
-    echo "[!] Warning: No subdomains discovered. Exiting."
+# --- Logic: Automated Merging ---
+if [ "$INCLUDE_ROOT" = true ]; then
+    echo "[*] Mode: Merging root domains with discovered subdomains..."
+    cat "$TARGET_FILE" "$OUTPUT_DIR/subs_found.txt" | sort -u > "$OUTPUT_DIR/all_targets.txt"
+else
+    echo "[*] Mode: Using only discovered subdomains..."
+    cp "$OUTPUT_DIR/subs_found.txt" "$OUTPUT_DIR/all_targets.txt"
+fi
+
+if [ ! -s "$OUTPUT_DIR/all_targets.txt" ]; then
+    echo "[!] Warning: No targets found after Phase 1. Exiting."
     exit 0
 fi
 
 # --- Phase 2: Live Host Probing ---
 echo "[*] Phase 2: Identifying Alive Hosts (Httpx)..."
-cat "$OUTPUT_DIR/subs.txt" | httpx-toolkit -silent -fc 404 -o "$OUTPUT_DIR/alive.txt"
+cat "$OUTPUT_DIR/all_targets.txt" | httpx-toolkit -silent -fc 404 -o "$OUTPUT_DIR/alive.txt"
 
 if [ ! -s "$OUTPUT_DIR/alive.txt" ]; then
     echo "[!] Warning: No alive hosts found."
@@ -59,7 +87,7 @@ fi
 echo "[*] Phase 3: Deep Crawling (Katana)..."
 cat "$OUTPUT_DIR/alive.txt" | katana -silent -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
 
-# --- Phase 4: Vulnerability Scanning (Bounty Optimized) ---
+# --- Phase 4: Vulnerability Scanning ---
 echo "[*] Phase 4: Running Nuclei Scan (Low to Critical)..."
 if [ -s "$OUTPUT_DIR/urls.txt" ]; then
     cat "$OUTPUT_DIR/urls.txt" | nuclei \
