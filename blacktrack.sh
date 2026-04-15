@@ -2,22 +2,22 @@
 
 # --- BlackTrack Tactical Banner ---
 echo -e "\e[1;31m"
-echo "  ____  _        _    ____ _  _______ ____      _    ____ _  __"
-echo " | __ )| |      / \  / ___| |/ /_   _|  _ \    / \  / ___| |/ /"
-echo " |  _ \| |     / _ \| |   | ' /  | | | |_) |  / _ \| |   | ' / "
-echo " | |_) | |___ / ___ \ |___| . \  | | |  _ <  / ___ \ |___| . \ "
+echo "  ____  _         _    ____ _  _______ ____      _    ____ _  __"
+echo " | __ )| |       / \  / ___| |/ /_  _|  _ \    / \  / ___| |/ /"
+echo " |  _ \| |      / _ \| |   | ' /  | | | |_) |  / _ \| |   | ' / "
+echo " | |_) | |___  / ___ \ |___| . \  | | |  _ <  / ___ \ |___| . \ "
 echo " |____/|_____/_/   \_\____|_|\_\ |_| |_| \_\/_/   \_\____|_|\_\\"
 echo -e "\e[0m"
-echo -e "\e[1;37m        >> JAKELO.AI WEAPONIZED RECON ENGINE v1.0.0 <<\e[0m"
+echo "        >> JAKELO.AI WEAPONIZED RECON ENGINE v1.0.0 <<"
 echo -e "\e[1;31m        >> [ HUNTER MODE: ACTIVE ] <<\e[0m"
 echo "---------------------------------------------------------------"
 echo ""
 
 # --- Color Definitions ---
-G='\033[0;32m'
-R='\033[0;31m'
-Y='\033[1;33m'
-NC='\033[0m'
+G=''
+R=''
+Y=''
+NC=''
 
 # --- Variable Initialization ---
 TARGET_FILE=$1
@@ -41,7 +41,7 @@ subfinder -dL "$TARGET_FILE" -all -recursive -silent -o "$OUTPUT_DIR/subs.txt"
 
 # --- Phase 2: Live Host Probing ---
 echo -e "${G}[*] Phase 2: Identifying Alive Hosts (Httpx)...${NC}"
-cat "$OUTPUT_DIR/subs.txt" | httpx-toolkit -silent -fc 404,403 -o "$OUTPUT_DIR/alive.txt"
+cat "$OUTPUT_DIR/subs.txt" | httpx-toolkit -silent -fc 404 -o "$OUTPUT_DIR/alive.txt"
 
 # --- Phase 3: Endpoint Discovery ---
 echo -e "${G}[*] Phase 3: Deep Crawling (Katana)...${NC}"
