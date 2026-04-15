@@ -17,23 +17,55 @@ To use this engine, you must manually sync the templates provided in this repo t
    cd BlackTrack
    ```
 2. **Merge Templates:**
-   Move the contents of the `black-nuclei/` directory to your local nuclei folder (typically `~/nuclei-templates/`):
+   Move the contents of the `black-nuclei/` directory to your local nuclei folder:
    ```bash
-   # Merging specialized templates into your local environment
    cp -r black-nuclei/* ~/nuclei-templates/
    ```
-3. **Setup Engine:**
-   Ensure `blacktrack.sh` is executable:
+3. **Keep it Sharp:**
+   Always ensure your official templates are updated before a hunt:
+   ```bash
+   nuclei -ut -silent
+   ```
+4. **Setup Engine:**
    ```bash
    chmod +x blacktrack.sh
+   # Optional: Move to bin for global access
+   sudo cp blacktrack.sh /usr/local/bin/blacktrack
    ```
+
+## 📢 Setting up Discord Notifications (Notify)
+BlackTrack uses `notify` to stream findings directly to your Discord.
+
+### Step 1: Create a Discord Webhook
+1. Open your Discord server settings > **Integrations** > **Webhooks**.
+2. Click **New Webhook**, select your channel, and **Copy Webhook URL**.
+
+### Step 2: Configure the Provider File
+Create the config file:
+```bash
+mkdir -p ~/.config/notify/
+nano ~/.config/notify/provider-config.yaml
+```
+Paste this minimalist configuration:
+```yaml
+discord:
+  - id: "server_id"
+    discord_channel_id: "none"
+    discord_webhook_url: "webhook_url_MUST_HAVE"
+```
+
+### Step 3: Fast Ping Test
+Verify your setup with a single command:
+```bash
+echo "BlackTrack Connection Test: Success" | notify -p discord
+```
 
 ## ⚠️ The Hunter's Code: Safety First
 If you are seeing this tool, congrats. You are now part of an elite circle. However, in bug bounty hunting, trust is a luxury you cannot afford.
 
 * **Caution**: When gathering templates from other hackers, **always** audit the code.
 * **Hackback Protection**: Malicious actors often hide **"hackback"** code (obfuscated JS or malicious shell commands) within innocent-looking YAML templates. 
-* **Rule**: Always grep for suspicious strings before running new community templates on your local machine. Stay safe.
+* **Rule**: Always grep for suspicious strings (`child_process`, `execSync`, `Uint8Array`) before running new community templates on your local machine. Stay safe.
 
 ## ⚡ Execution
 ```bash
@@ -44,7 +76,7 @@ If you are seeing this tool, congrats. You are now part of an elite circle. Howe
 1. **Passive Discovery**: Exhaustive subdomain gathering via multiple sources.
 2. **Active Probing**: Validating alive hosts and filtering out noise (404/403).
 3. **Endpoint Extraction**: Deep crawling with Katana to find hidden parameters and API endpoints.
-4. **Targeted Scanning**: Running multi-source templates with OOB (Interactsh) support for maximum impact.
+4. **Targeted Scanning**: Running multi-source templates (Official + Community + JakeLo.ai) with OOB support.
 
 ---
 
