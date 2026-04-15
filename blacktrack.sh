@@ -41,7 +41,7 @@ subfinder -dL "$TARGET_FILE" -all -recursive -silent -o "$OUTPUT_DIR/subs.txt"
 
 # --- Phase 2: Live Host Probing ---
 echo -e "${G}[*] Phase 2: Identifying Alive Hosts (Httpx)...${NC}"
-cat "$OUTPUT_DIR/subs.txt" | httpx -silent -fc 404,403 -o "$OUTPUT_DIR/alive.txt"
+cat "$OUTPUT_DIR/subs.txt" | httpx-toolkit -silent -fc 404,403 -o "$OUTPUT_DIR/alive.txt"
 
 # --- Phase 3: Endpoint Discovery ---
 echo -e "${G}[*] Phase 3: Deep Crawling (Katana)...${NC}"
