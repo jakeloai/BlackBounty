@@ -59,14 +59,13 @@ fi
 echo "[*] Phase 3: Deep Crawling (Katana)..."
 cat "$OUTPUT_DIR/alive.txt" | katana -silent -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
 
-# --- Phase 4: Vulnerability Scanning ---
-echo "[*] Phase 4: Running Nuclei Scan..."
+# --- Phase 4: Vulnerability Scanning (Bounty Optimized) ---
+echo "[*] Phase 4: Running Nuclei Scan (Low to Critical)..."
 if [ -s "$OUTPUT_DIR/urls.txt" ]; then
     cat "$OUTPUT_DIR/urls.txt" | nuclei \
         -t ~/nuclei-templates \
         -as \
-        -itags exploit,cve,lfi,ssrf,sqli,rce,config \
-        -severity critical,high \
+        -severity low,medium,high,critical \
         -rl 100 -bs 25 -c 15 \
         -et tags/dos \
         -silent -stream -o "$OUTPUT_FILE" | notify -p discord -bulk
