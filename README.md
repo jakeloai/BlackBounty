@@ -1,5 +1,3 @@
-# README.md
-
 # 🛡️ BlackTrack - Large Scale Vulnerability Pipeline
 **The Core Recon Engine of JakeLo.ai**
 
