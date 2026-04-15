@@ -1,60 +1,77 @@
 #!/bin/bash
 
-# --- BlackTrack Tactical Banner ---
-echo -e "\e[1;31m"
-echo "  ____  _         _    ____ _  _______ ____      _    ____ _  __"
-echo " | __ )| |       / \  / ___| |/ /_  _|  _ \    / \  / ___| |/ /"
-echo " |  _ \| |      / _ \| |   | ' /  | | | |_) |  / _ \| |   | ' / "
-echo " | |_) | |___  / ___ \ |___| . \  | | |  _ <  / ___ \ |___| . \ "
-echo " |____/|_____/_/   \_\____|_|\_\ |_| |_| \_\/_/   \_\____|_|\_\\"
-echo -e "\e[0m"
-echo "        >> JAKELO.AI WEAPONIZED RECON ENGINE v1.0.0 <<"
-echo -e "\e[1;31m        >> [ HUNTER MODE: ACTIVE ] <<\e[0m"
-echo "---------------------------------------------------------------"
-echo ""
-
-# --- Color Definitions ---
-G=''
-R=''
-Y=''
-NC=''
-
 # --- Variable Initialization ---
 TARGET_FILE=$1
 DATE=$(date +%Y%m%d_%H%M)
 OUTPUT_DIR="recon_$DATE"
-mkdir -p "$OUTPUT_DIR"
 OUTPUT_FILE="$OUTPUT_DIR/nuclei_results.txt"
 
-# --- Input Validation ---
+# --- Error Handling & Environment Check ---
+
+# 1. Input Validation
 if [ -z "$TARGET_FILE" ]; then
-    echo -e "${R}Usage: ./blacktrack.sh targets.txt${NC}"
+    echo "[!] Error: No target file specified."
+    echo "Usage: ./blacktrack.sh targets.txt"
     exit 1
 fi
 
-echo -e "${G}[+] Initializing BlackTrack Pipeline: $TARGET_FILE${NC}"
-echo -e "${Y}[!] Results will be saved in: $OUTPUT_DIR${NC}"
+# 2. Check if file exists
+if [ ! -f "$TARGET_FILE" ]; then
+    echo "[!] Error: File '$TARGET_FILE' not found."
+    exit 1
+fi
+
+# 3. Dependency Check
+tools=("subfinder" "httpx-toolkit" "katana" "nuclei" "notify")
+for tool in "${tools[@]}"; do
+    if ! command -v "$tool" &> /dev/null; then
+        echo "[!] Error: Dependency '$tool' is not installed."
+        exit 1
+    fi
+done
+
+# Create output directory
+mkdir -p "$OUTPUT_DIR" || { echo "[!] Failed to create directory $OUTPUT_DIR"; exit 1; }
+
+echo "[+] Initializing Pipeline: $TARGET_FILE"
+echo "[!] Results will be saved in: $OUTPUT_DIR"
 
 # --- Phase 1: Subdomain Discovery ---
-echo -e "${G}[*] Phase 1: Passive Subdomain Enumeration (Subfinder)...${NC}"
-subfinder -dL "$TARGET_FILE" -all -recursive -silent -o "$OUTPUT_DIR/subs.txt"
+# Optimized: Using -dL only for large targets to prevent crashes
+echo "[*] Phase 1: Passive Subdomain Enumeration (Subfinder)..."
+subfinder -dL "$TARGET_FILE" -silent -o "$OUTPUT_DIR/subs.txt"
+
+if [ ! -s "$OUTPUT_DIR/subs.txt" ]; then
+    echo "[!] Warning: No subdomains discovered. Exiting."
+    exit 0
+fi
 
 # --- Phase 2: Live Host Probing ---
-echo -e "${G}[*] Phase 2: Identifying Alive Hosts (Httpx)...${NC}"
+echo "[*] Phase 2: Identifying Alive Hosts (Httpx)..."
 cat "$OUTPUT_DIR/subs.txt" | httpx-toolkit -silent -fc 404 -o "$OUTPUT_DIR/alive.txt"
 
+if [ ! -s "$OUTPUT_DIR/alive.txt" ]; then
+    echo "[!] Warning: No alive hosts found."
+    exit 0
+fi
+
 # --- Phase 3: Endpoint Discovery ---
-echo -e "${G}[*] Phase 3: Deep Crawling (Katana)...${NC}"
+echo "[*] Phase 3: Deep Crawling (Katana)..."
 cat "$OUTPUT_DIR/alive.txt" | katana -silent -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
 
-# Phase 4: Running Nuclei with ALL templates (Official + Community + JakeLo)
-cat "$OUTPUT_DIR/urls.txt" | nuclei \
-    -t ~/nuclei-templates \
-    -as \
-    -itags exploit,cve,lfi,ssrf,sqli,rce,config \
-    -severity critical,high \
-    -rl 100 -bs 25 -c 15 \
-    -et tags/dos \
-    -silent -stream -o "$OUTPUT_FILE" | notify -p discord -bulk
+# --- Phase 4: Vulnerability Scanning ---
+echo "[*] Phase 4: Running Nuclei Scan..."
+if [ -s "$OUTPUT_DIR/urls.txt" ]; then
+    cat "$OUTPUT_DIR/urls.txt" | nuclei \
+        -t ~/nuclei-templates \
+        -as \
+        -itags exploit,cve,lfi,ssrf,sqli,rce,config \
+        -severity critical,high \
+        -rl 100 -bs 25 -c 15 \
+        -et tags/dos \
+        -silent -stream -o "$OUTPUT_FILE" | notify -p discord -bulk
+else
+    echo "[!] No URLs found to scan."
+fi
 
-echo -e "${G}[+] BlackTrack Pipeline Finished. Check Discord or $OUTPUT_FILE for findings.${NC}"
+echo "[+] Pipeline Finished. Check $OUTPUT_FILE for findings."
