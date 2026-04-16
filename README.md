@@ -1,6 +1,8 @@
 # 🛡️ BlackTrack - Large Scale Vulnerability Pipeline
 **The Core Recon Engine of JakeLo.ai**
 
+<img width="1376" height="768" alt="1776301658702" src="https://github.com/user-attachments/assets/aac9fd55-9267-4e12-86d5-3cd64f7cef9a" />
+
 ## 🚀 Overview
 **BlackTrack** is a high-performance, automated reconnaissance and vulnerability scanning pipeline designed for professional bug bounty hunters. This tool is built on the principle of **Information Asymmetry**—providing you with custom intelligence that standard scans miss.
 
