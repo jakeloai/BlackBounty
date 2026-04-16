@@ -64,15 +64,6 @@ else
     sort -u "$SUBFINDER_OUT" > "$ALL_TARGETS"
 fi
 
-# Cloud Enumeration (Extract keywords from targets to avoid passing full URLs)
-echo "[*] Extracting keywords for Cloud Enum..."
-cat "$ALL_TARGETS" | awk -F. '{print $(NF-1)}' | sort -u > "$CLOUD_KEYWORDS"
-if [ -s "$CLOUD_KEYWORDS" ]; then
-    echo "[*] Running Cloud Enum..."
-    # Note: adjust syntax based on your cloud_enum version. Usually requires keyword file.
-    cloud_enum -k "$CLOUD_KEYWORDS" | notify -p discord -bulk
-fi
-
 # Port Scanning (Naabu)
 echo "[*] Running Naabu Port Scan..."
 # Save Naabu output so httpx can actually use the discovered ports
