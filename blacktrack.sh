@@ -4,19 +4,17 @@
 show_help() {
     echo "Usage: ./blacktrack.sh [options]"
     echo "Options:"
-    echo "  -r <file>    Root Domain file (Directly to httpx)"
-    echo "  -s <file>    Subdomain file (For Subfinder discovery)"
-    echo "  -a <file>    Amass target file (Specific domains for deep brute force)"
-    echo "  -w <file>    Wordlist for Amass brute forcing"
+    echo "  -r <file>    Root Domain file (Single assets, skip subdomain discovery)"
+    echo "  -s <file>    Subdomain targets (Run Subfinder for wildcard scope)"
+    echo "  -a <file>    Amass deep brute targets (Optional, takes long time)"
+    echo "  -w <file>    Wordlist for Amass"
     echo "  -h           Show help"
     exit 0
 }
 
 # --- Argument Parsing ---
 WORDLIST="/usr/share/wordlists/amass/subdomains-top1mil.txt"
-AMASS_FILE=""
-ROOT_FILE=""
-SUB_FILE=""
+AMASS_FILE=""; ROOT_FILE=""; SUB_FILE=""
 
 while getopts "r:s:a:w:h" opt; do
     case $opt in
@@ -33,85 +31,61 @@ if [[ -z "$ROOT_FILE" && -z "$SUB_FILE" && -z "$AMASS_FILE" ]]; then show_help; 
 
 # --- Initialization ---
 DATE=$(date +%Y%m%d_%H%M)
-OUTPUT_DIR="bounty_hunt_$DATE"
+OUTPUT_DIR="fast_bounty_$DATE"
 mkdir -p "$OUTPUT_DIR/secrets" "$OUTPUT_DIR/amass_raw"
-PROCESSED_LOG="$OUTPUT_DIR/processed_domains.log"
 
-# --- Phase 0: Targeted Amass Enumeration (With De-dupe) ---
-if [[ -n "$AMASS_FILE" ]]; then
-    echo "[*] Phase 0: Starting Targeted Amass Brute Force..." | notify -p discord
-    # 攞所有 Domain 先行一次去重
-    sort -u "$AMASS_FILE" -o "$OUTPUT_DIR/amass_targets_clean.txt"
-    
-    while read -r domain; do
-        [ -z "$domain" ] && continue
-        
-        # 檢查係咪已經掃過 (防止重複勞動)
-        if grep -q "^$domain$" "$PROCESSED_LOG" 2>/dev/null; then
-            echo "[#] Skipping already processed: $domain"
-            continue
-        fi
-
-        echo "[>] Deep Scanning: $domain"
-        amass enum -d "$domain" -brute -w "$WORDLIST" -oA "$OUTPUT_DIR/amass_raw/${domain}_full"
-        
-        # 紀錄已完成嘅 Domain
-        echo "$domain" >> "$PROCESSED_LOG"
-    done < "$OUTPUT_DIR/amass_targets_clean.txt"
-    
-    cat "$OUTPUT_DIR/amass_raw/"*.txt | sort -u > "$OUTPUT_DIR/amass_subs.txt"
-    echo "[+] Amass finished. Unique subdomains: $(wc -l < "$OUTPUT_DIR/amass_subs.txt")" | notify -p discord
-fi
-
-# --- Phase 1: Subfinder & Cloud Discovery ---
+# --- Phase 1: Fast Passive Recon (The Mapping) ---
+echo "[*] Phase 1: Mapping Attack Surface (Subfinder)..." | notify -p discord
 if [[ -n "$SUB_FILE" ]]; then
-    echo "[*] Phase 1: Fast Subdomain Discovery & Cloud Enum..."
-    sort -u "$SUB_FILE" -o "$OUTPUT_DIR/subs_clean.txt"
-    subfinder -dL "$OUTPUT_DIR/subs_clean.txt" -silent -o "$OUTPUT_DIR/subfinder_subs.txt"
-    
-    FIRST_DOMAIN=$(head -n 1 "$OUTPUT_DIR/subs_clean.txt")
-    cloud_enum -k "$FIRST_DOMAIN" -l "$OUTPUT_DIR/buckets.txt" | notify -p discord -bulk
+    subfinder -dL "$SUB_FILE" -silent -o "$OUTPUT_DIR/passive_subs.txt"
 fi
 
-# --- Phase 2: Merge & Port Scan ---
-echo "[*] Phase 2: Merging & Port Scanning..."
-cat "$ROOT_FILE" "$OUTPUT_DIR/amass_subs.txt" "$OUTPUT_DIR/subfinder_subs.txt" 2>/dev/null | sort -u > "$OUTPUT_DIR/all_targets.txt"
-naabu -list "$OUTPUT_DIR/all_targets.txt" -top-ports 1000 -silent -o "$OUTPUT_DIR/naabu.txt" | notify -p discord -bulk
+# 合併 Root 同埋 Passive 搵到嘅所有 Subdomains
+cat "$ROOT_FILE" "$OUTPUT_DIR/passive_subs.txt" 2>/dev/null | sort -u > "$OUTPUT_DIR/quick_targets.txt"
+TOTAL_QUICK=$(wc -l < "$OUTPUT_DIR/quick_targets.txt")
+echo "[+] Mapping Done. Total Quick Targets: $TOTAL_QUICK" | notify -p discord
 
-# --- Phase 3: Probing & 403 Bypass ---
-echo "[*] Phase 3: Probing & 403 Bypass Testing..."
-cat "$OUTPUT_DIR/all_targets.txt" "$OUTPUT_DIR/naabu.txt" | sort -u > "$OUTPUT_DIR/to_httpx.txt"
-httpx-toolkit -l "$OUTPUT_DIR/to_httpx.txt" -fc 404 -silent -o "$OUTPUT_DIR/alive.txt"
+# --- Phase 2: Fast-Money Nuclei (The Low-Hanging Fruit) ---
+# 呢一炮係同其他人「搶時間」，專攻最易爆嘅 P1/P2
+echo "[!] Phase 2: Launching Quick-Win Nuclei Scan..." | notify -p discord
+httpx-toolkit -l "$OUTPUT_DIR/quick_targets.txt" -silent | nuclei \
+    -t takeovers/ \
+    -t exposures/ \
+    -t misconfig/ \
+    -severity critical,high \
+    -rl 100 -bs 25 \
+    -silent -o "$OUTPUT_DIR/quick_win_results.txt" | notify -p discord
 
-# 403 Bypass Alert
-grep "403" "$OUTPUT_DIR/alive.txt" | xargs -I % curl -s -I -L -H "X-Forwarded-For: 127.0.0.1" % | grep "200 OK" && echo "[!] 403 Bypass SUCCESS on %" | notify -p discord
+# --- Phase 3: Deep Recon - Amass Brute Force (Concurrent) ---
+# 呢部分好慢，所以擺喺 Quick Win 之後
+if [[ -n "$AMASS_FILE" ]]; then
+    echo "[*] Phase 3: Starting Deep Amass Brute Force (Slow)..." | notify -p discord
+    sort -u "$AMASS_FILE" | while read -r domain; do
+        [ -z "$domain" ] && continue
+        amass enum -d "$domain" -brute -w "$WORDLIST" -oA "$OUTPUT_DIR/amass_raw/${domain}_full"
+    done
+    cat "$OUTPUT_DIR/amass_raw/"*.txt | sort -u > "$OUTPUT_DIR/amass_subs.txt"
+fi
 
-# --- Phase 4: JS Secret Mining (Trufflehog) ---
-echo "[*] Phase 4: Crawling & Verified Secret Mining..."
+# --- Phase 4: Full Asset Consolidation & Port Scan ---
+cat "$OUTPUT_DIR/quick_targets.txt" "$OUTPUT_DIR/amass_subs.txt" 2>/dev/null | sort -u > "$OUTPUT_DIR/all_assets.txt"
+naabu -list "$OUTPUT_DIR/all_assets.txt" -top-ports 1000 -silent -o "$OUTPUT_DIR/naabu.txt" | notify -p discord -bulk
+
+# --- Phase 5: Deep Probing & Secret Mining ---
+# 針對所有 Asset 進行深入挖掘
+httpx-toolkit -l "$OUTPUT_DIR/naabu.txt" -fc 404 -silent -o "$OUTPUT_DIR/alive.txt"
 katana -list "$OUTPUT_DIR/alive.txt" -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
 
+# Trufflehog 掃描 JS Secrets
 grep ".js" "$OUTPUT_DIR/urls.txt" | sort -u > "$OUTPUT_DIR/js_urls.txt"
-# 掃描並自動驗證 Secret
-trufflehog pipeline --file="$OUTPUT_DIR/js_urls.txt" --only-verified > "$OUTPUT_DIR/secrets/js_secrets.txt"
+trufflehog pipeline --file="$OUTPUT_DIR/js_urls.txt" --only-verified > "$OUTPUT_DIR/secrets/js_secrets.txt" | notify -p discord
 
-if [ -s "$OUTPUT_DIR/secrets/js_secrets.txt" ]; then
-    echo "[!!!] FOUND VERIFIED SECRETS!" | notify -p discord
-    cat "$OUTPUT_DIR/secrets/js_secrets.txt" | notify -p discord
-fi
-
-# --- Phase 5: Money-Maker Nuclei Scan ---
-echo "[*] Phase 5: High-ROI Nuclei Templates..."
+# --- Phase 6: Full Nuclei & BBOT Sweep ---
+# 跑埋剩低嘅漏洞，包括最近幾年嘅 CVE
 cat "$OUTPUT_DIR/urls.txt" | nuclei \
-    -as \
-    -t takeovers/ \
-    -t cves/2024/,cves/2025/,cves/2026/ \
-    -t default-logins/ \
-    -t exposures/ \
-    -severity medium,high,critical \
-    -rl 50 -bs 15 -silent -o "$OUTPUT_DIR/nuclei_bounty.txt" | notify -p discord -bulk
+    -as -t cves/2024/,cves/2025/,cves/2026/ -t default-logins/ \
+    -severity medium,high,critical -rl 50 -silent -o "$OUTPUT_DIR/full_nuclei_results.txt" | notify -p discord -bulk
 
-# --- Phase 6: BBOT Heavy Sweep ---
-echo "[*] Phase 6: BBOT Kitchen Sink..."
-bbot -t "$OUTPUT_DIR/all_targets.txt" -p kitchen-sink --allow-deadly --force | notify -p discord -bulk
+bbot -t "$OUTPUT_DIR/all_assets.txt" -p kitchen-sink --allow-deadly --force | notify -p discord -bulk
 
 echo "[+] BlackTrack Finished. Results in $OUTPUT_DIR" | notify -p discord
