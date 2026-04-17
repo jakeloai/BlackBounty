@@ -34,7 +34,7 @@ go install -v github.com/projectdiscovery/tlsx/cmd/tlsx@latest
 
 # 4. Python-based Tools (BBOT & Semgrep)
 echo "[*] Installing BBOT and Semgrep..."
-python3 -m pip install --upgrade bbot semgrep --break-system-packages
+python3 -m pip install --upgrade bbot --break-system-packages
 
 # 5. Path Management & Binary Linking
 echo "[*] Linking binaries to /usr/local/bin for global access..."
