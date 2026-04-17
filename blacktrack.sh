@@ -1,4 +1,45 @@
 #!/bin/bash
+# proxy_manager.sh
+
+PROXY_POOL="proxy_pool.txt"
+TEMP_RAW="proxies_raw.txt"
+TEMP_VALID="proxies_valid.tmp"
+
+check_proxy() {
+    local proxy=$1
+    # Check if proxy is alive and fast (3s timeout)
+    if curl -s -o /dev/null -L --proxy "$proxy" --max-time 3 "https://www.google.com" -w "%{http_code}" | grep -q "200"; then
+        echo "$proxy" >> "$TEMP_VALID"
+    fi
+}
+
+export -f check_proxy
+
+while true; do
+    echo "[*] $(date): Refreshing proxy pool..."
+    
+    # Fetch from proxifly
+    curl -s "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt" > "$TEMP_RAW"
+    curl -s "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/https/data.txt" >> "$TEMP_RAW"
+    curl -s "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks4/data.txt" | sed 's/^/socks4:\/\//' >> "$TEMP_RAW"
+    curl -s "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/socks5/data.txt" | sed 's/^/socks5:\/\//' >> "$TEMP_RAW"
+
+    > "$TEMP_VALID"
+
+    # Parallel checking
+    sort -u "$TEMP_RAW" | xargs -I {} -P 50 bash -c 'check_proxy "{}"'
+
+    # Atomic update
+    if [ -s "$TEMP_VALID" ]; then
+        mv "$TEMP_VALID" "$PROXY_POOL"
+        echo "[+] Proxy pool updated: $(wc -l < $PROXY_POOL) alive."
+    else
+        echo "[-] No alive proxies. Keeping old pool."
+    fi
+
+    # Random sleep 5-15 mins
+    sleep $((RANDOM % 601 + 300))
+done#!/bin/bash
 # blacktrack.sh - v6.0 Nuclear Edition (No Colors, Proxy Aware)
 
 show_help() {
