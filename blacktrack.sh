@@ -7,7 +7,7 @@ show_help() {
     echo "Options:"
     echo "  -r <file>    Root Domain file (Directly to httpx, skips Subfinder)"
     echo "  -s <file>    Subdomain file (Runs Subfinder for wildcard discovery)"
-    echo "  -h, --help   Show this help message"
+    echo "  -h, --help    Show this help message"
     exit 0
 }
 
@@ -66,7 +66,6 @@ fi
 
 # Port Scanning (Naabu)
 echo "[*] Running Naabu Port Scan..."
-# Save Naabu output so httpx can actually use the discovered ports
 naabu -list "$ALL_TARGETS" -top-ports 1000 -silent -o "$NAABU_PORTS" | notify -p discord -bulk
 
 # Combine original targets and discovered ports for probing
@@ -81,62 +80,17 @@ if [ ! -s "$ALIVE_TARGETS" ]; then
     exit 0
 fi
 
-# --- Phase 4: Crawling & Static Analysis ---
-echo "[*] Phase 4: Deep crawling (Katana)..."
-katana -list "$ALIVE_TARGETS" -silent -jc -kf all -d 3 -fs rdn -o "$CRAWLED_URLS"
-
-if [ -s "$CRAWLED_URLS" ]; then
-    # Extract ONLY static/source files to avoid downloading entire HTML pages
-    echo "[*] Filtering JS, JSON, and Map files..."
-    grep -iE '\.(js|json|map|xml|yaml|yml)($|\?)' "$CRAWLED_URLS" | sort -u > "$JS_FILES"
-
-    if [ -s "$JS_FILES" ]; then
-        echo "[*] Downloading static code with 10 threads..."
-        # Using wget to fetch source. Cut query parameters to save files properly.
-        cat "$JS_FILES" | xargs -I % -P 10 bash -c 'wget -q -P "$1" "${2%\?*}" --tries=2 --timeout=10 --no-check-certificate 2>/dev/null' _ "$STATIC_CODE_DIR" %
-        
-        # --- Trivy Scan ---
-        echo "[*] Running Trivy scan..."
-        trivy fs "$STATIC_CODE_DIR" --severity HIGH,CRITICAL --format table -o "$TRIVY_OUT" 2>/dev/null
-        
-        if [ -s "$TRIVY_OUT" ]; then
-            echo "--- Trivy Vuln Report ---" | notify -p discord
-            cat "$TRIVY_OUT" | notify -p discord -bulk
-        fi
-
-        # --- Semgrep Scan ---
-        echo "[*] Running Semgrep scan..."
-        # Using official Semgrep registries for SAST and Secrets
-        semgrep scan --config="p/javascript" --config="p/secrets" \
-            --json -o "$SEMGREP_OUT" "$STATIC_CODE_DIR" 2>/dev/null
-        
-        semgrep scan --config="p/default" --config="p/secrets" \
-            --min-severity=ERROR --emacs --quiet "$STATIC_CODE_DIR" > "$SEMGREP_TXT" 2>/dev/null
-
-        if [ -s "$SEMGREP_TXT" ]; then
-            echo "--- Semgrep Static Analysis Report ---" | notify -p discord
-            head -n 50 "$SEMGREP_TXT" | notify -p discord -bulk 
-            echo "...(Check $SEMGREP_OUT for full details)" | notify -p discord
-        else
-            echo "Semgrep finished: No issues found." | notify -p discord
-        fi
-    else
-        echo "[!] No static source files found during crawl."
-    fi
-fi
-
 # --- Phase 5: Nuclei Scan ---
 echo "[*] Phase 5: Running Nuclei..."
-if [ -s "$CRAWLED_URLS" ]; then
-    # Pass ALL crawled URLs (not just JS) to nuclei to test for endpoints/vulns
-    cat "$CRAWLED_URLS" | nuclei \
+if [ -s "$ALIVE_TARGETS" ]; then
+    cat "$ALIVE_TARGETS" | nuclei \
         -as \
         -severity medium,high,critical \
         -rl 100 -bs 25 -c 15 \
         -et tags/dos \
         -silent -stream -o "$NUCLEI_RESULT" | notify -p discord -bulk
 else
-    echo "[!] No URLs discovered for Nuclei scanning."
+    echo "[!] No targets discovered for Nuclei scanning."
 fi
 
 echo -e "\n[+] Pipeline finished. Results saved in: $OUTPUT_DIR"
