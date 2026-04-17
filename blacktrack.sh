@@ -33,20 +33,14 @@ fi
 # --- Initialization ---
 DATE=$(date +%Y%m%d_%H%M)
 OUTPUT_DIR="recon_$DATE"
-STATIC_CODE_DIR="$OUTPUT_DIR/frontend_static_code"
-mkdir -p "$OUTPUT_DIR" "$STATIC_CODE_DIR"
+mkdir -p "$OUTPUT_DIR"
 
 ALL_TARGETS="$OUTPUT_DIR/all_target.txt"
 NAABU_PORTS="$OUTPUT_DIR/naabu_ports.txt"
 ALIVE_TARGETS="$OUTPUT_DIR/all_alive_targets.txt"
 CRAWLED_URLS="$OUTPUT_DIR/all_crawled_urls.txt"
-JS_FILES="$OUTPUT_DIR/js_static_files.txt"
 NUCLEI_RESULT="$OUTPUT_DIR/nuclei_result.txt"
 SUBFINDER_OUT="$OUTPUT_DIR/subdomain_result.txt"
-SEMGREP_OUT="$OUTPUT_DIR/semgrep_results.json"
-SEMGREP_TXT="$OUTPUT_DIR/semgrep_summary.txt"
-TRIVY_OUT="$OUTPUT_DIR/trivy_results.txt"
-CLOUD_KEYWORDS="$OUTPUT_DIR/cloud_keywords.txt"
 
 # --- Phase 1: Subdomain Enumeration ---
 if [[ -n "$SUB_FILE" ]]; then
@@ -80,17 +74,25 @@ if [ ! -s "$ALIVE_TARGETS" ]; then
     exit 0
 fi
 
+# --- Phase 4: Crawling (Katana) ---
+echo "[*] Phase 4: Deep crawling with Katana..."
+# 只進行爬蟲獲取 URL，不進行文件下載
+katana -list "$ALIVE_TARGETS" -silent -jc -kf all -d 3 -fs rdn -o "$CRAWLED_URLS"
+
 # --- Phase 5: Nuclei Scan ---
 echo "[*] Phase 5: Running Nuclei..."
-if [ -s "$ALIVE_TARGETS" ]; then
-    cat "$ALIVE_TARGETS" | nuclei \
+# 同時針對活著的目標 (Alive) 和 爬到的 URL (Crawled) 進行掃描
+if [ -s "$CRAWLED_URLS" ]; then
+    echo "[*] Scanning crawled URLs with Nuclei..."
+    cat "$CRAWLED_URLS" | nuclei \
         -as \
         -severity medium,high,critical \
         -rl 100 -bs 25 -c 15 \
         -et tags/dos \
         -silent -stream -o "$NUCLEI_RESULT" | notify -p discord -bulk
 else
-    echo "[!] No targets discovered for Nuclei scanning."
+    echo "[!] Katana found no URLs, scanning alive targets directly..."
+    cat "$ALIVE_TARGETS" | nuclei -as -severity medium,high,critical -silent -o "$NUCLEI_RESULT" | notify -p discord
 fi
 
 echo -e "\n[+] Pipeline finished. Results saved in: $OUTPUT_DIR"
