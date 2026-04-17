@@ -7,7 +7,7 @@ show_help() {
     echo "  -r <file>    Root Domain file (Directly to httpx)"
     echo "  -s <file>    Subdomain file (For Subfinder discovery)"
     echo "  -a <file>    Amass target file (Specific domains for deep brute force)"
-    echo "  -w <file>    Wordlist for Amass brute forcing (Default: top 1mil)"
+    echo "  -w <file>    Wordlist for Amass brute forcing"
     echo "  -h           Show help"
     exit 0
 }
@@ -33,38 +33,49 @@ if [[ -z "$ROOT_FILE" && -z "$SUB_FILE" && -z "$AMASS_FILE" ]]; then show_help; 
 
 # --- Initialization ---
 DATE=$(date +%Y%m%d_%H%M)
-OUTPUT_DIR="money_recon_$DATE"
+OUTPUT_DIR="bounty_hunt_$DATE"
 mkdir -p "$OUTPUT_DIR/secrets" "$OUTPUT_DIR/amass_raw"
+PROCESSED_LOG="$OUTPUT_DIR/processed_domains.log"
 
-# --- Phase 0: Targeted Amass Enumeration ---
+# --- Phase 0: Targeted Amass Enumeration (With De-dupe) ---
 if [[ -n "$AMASS_FILE" ]]; then
     echo "[*] Phase 0: Starting Targeted Amass Brute Force..." | notify -p discord
+    # 攞所有 Domain 先行一次去重
+    sort -u "$AMASS_FILE" -o "$OUTPUT_DIR/amass_targets_clean.txt"
+    
     while read -r domain; do
         [ -z "$domain" ] && continue
+        
+        # 檢查係咪已經掃過 (防止重複勞動)
+        if grep -q "^$domain$" "$PROCESSED_LOG" 2>/dev/null; then
+            echo "[#] Skipping already processed: $domain"
+            continue
+        fi
+
         echo "[>] Deep Scanning: $domain"
-        # 使用你指定的檔案行強力 brute force
         amass enum -d "$domain" -brute -w "$WORDLIST" -oA "$OUTPUT_DIR/amass_raw/${domain}_full"
-    done < "$AMASS_FILE"
+        
+        # 紀錄已完成嘅 Domain
+        echo "$domain" >> "$PROCESSED_LOG"
+    done < "$OUTPUT_DIR/amass_targets_clean.txt"
     
     cat "$OUTPUT_DIR/amass_raw/"*.txt | sort -u > "$OUTPUT_DIR/amass_subs.txt"
-    echo "[+] Amass finished. Found $(wc -l < "$OUTPUT_DIR/amass_subs.txt") subdomains." | notify -p discord
+    echo "[+] Amass finished. Unique subdomains: $(wc -l < "$OUTPUT_DIR/amass_subs.txt")" | notify -p discord
 fi
 
 # --- Phase 1: Subfinder & Cloud Discovery ---
 if [[ -n "$SUB_FILE" ]]; then
     echo "[*] Phase 1: Fast Subdomain Discovery & Cloud Enum..."
-    subfinder -dL "$SUB_FILE" -silent -o "$OUTPUT_DIR/subfinder_subs.txt"
+    sort -u "$SUB_FILE" -o "$OUTPUT_DIR/subs_clean.txt"
+    subfinder -dL "$OUTPUT_DIR/subs_clean.txt" -silent -o "$OUTPUT_DIR/subfinder_subs.txt"
     
-    # Cloud Storage Leakage (以第一個 domain 做關鍵字)
-    FIRST_DOMAIN=$(head -n 1 "$SUB_FILE")
+    FIRST_DOMAIN=$(head -n 1 "$OUTPUT_DIR/subs_clean.txt")
     cloud_enum -k "$FIRST_DOMAIN" -l "$OUTPUT_DIR/buckets.txt" | notify -p discord -bulk
 fi
 
 # --- Phase 2: Merge & Port Scan ---
-echo "[*] Phase 2: Merging All Assets & Port Scanning..."
-# 合併所有來源：Root file, Amass 產出, Subfinder 產出
+echo "[*] Phase 2: Merging & Port Scanning..."
 cat "$ROOT_FILE" "$OUTPUT_DIR/amass_subs.txt" "$OUTPUT_DIR/subfinder_subs.txt" 2>/dev/null | sort -u > "$OUTPUT_DIR/all_targets.txt"
-
 naabu -list "$OUTPUT_DIR/all_targets.txt" -top-ports 1000 -silent -o "$OUTPUT_DIR/naabu.txt" | notify -p discord -bulk
 
 # --- Phase 3: Probing & 403 Bypass ---
@@ -73,17 +84,18 @@ cat "$OUTPUT_DIR/all_targets.txt" "$OUTPUT_DIR/naabu.txt" | sort -u > "$OUTPUT_D
 httpx-toolkit -l "$OUTPUT_DIR/to_httpx.txt" -fc 404 -silent -o "$OUTPUT_DIR/alive.txt"
 
 # 403 Bypass Alert
-grep "403" "$OUTPUT_DIR/alive.txt" | xargs -I % curl -s -I -H "X-Forwarded-For: 127.0.0.1" % | grep "200 OK" && echo "[!] 403 Bypass SUCCESS on %" | notify -p discord
+grep "403" "$OUTPUT_DIR/alive.txt" | xargs -I % curl -s -I -L -H "X-Forwarded-For: 127.0.0.1" % | grep "200 OK" && echo "[!] 403 Bypass SUCCESS on %" | notify -p discord
 
 # --- Phase 4: JS Secret Mining (Trufflehog) ---
 echo "[*] Phase 4: Crawling & Verified Secret Mining..."
 katana -list "$OUTPUT_DIR/alive.txt" -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
 
 grep ".js" "$OUTPUT_DIR/urls.txt" | sort -u > "$OUTPUT_DIR/js_urls.txt"
+# 掃描並自動驗證 Secret
 trufflehog pipeline --file="$OUTPUT_DIR/js_urls.txt" --only-verified > "$OUTPUT_DIR/secrets/js_secrets.txt"
 
 if [ -s "$OUTPUT_DIR/secrets/js_secrets.txt" ]; then
-    echo "[!!!] FOUND VERIFIED SECRETS - CHECK DISCORD" | notify -p discord
+    echo "[!!!] FOUND VERIFIED SECRETS!" | notify -p discord
     cat "$OUTPUT_DIR/secrets/js_secrets.txt" | notify -p discord
 fi
 
@@ -102,4 +114,4 @@ cat "$OUTPUT_DIR/urls.txt" | nuclei \
 echo "[*] Phase 6: BBOT Kitchen Sink..."
 bbot -t "$OUTPUT_DIR/all_targets.txt" -p kitchen-sink --allow-deadly --force | notify -p discord -bulk
 
-echo "[+] BlackTrack Finished. Good luck with the Bounty!" | notify -p discord
+echo "[+] BlackTrack Finished. Results in $OUTPUT_DIR" | notify -p discord
