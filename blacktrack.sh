@@ -56,7 +56,7 @@ httpx-toolkit -l "$OUTPUT_DIR/quick_targets.txt" -silent | nuclei \
 
 # --- Phase 3: Deep Recon - Amass Brute Force (Concurrent) ---
 if [[ -n "$AMASS_FILE" ]]; then
-    echo "[*] Phase 3: Starting Deep Amass Brute Force (Slow)..." | notify -p discord
+    echo "[*] Phase 3: Starting Deep Amass Brute Force (Slow)..."
     sort -u "$AMASS_FILE" | while read -r domain; do
         [ -z "$domain" ] && continue
         amass enum -d "$domain" -brute -w "$WORDLIST" -oA "$OUTPUT_DIR/amass_raw/${domain}_full"
@@ -72,7 +72,7 @@ naabu -list "$OUTPUT_DIR/all_assets.txt" -top-ports 1000 -silent -o "$OUTPUT_DIR
 httpx-toolkit -l "$OUTPUT_DIR/naabu.txt" -fc 404 -silent -o "$OUTPUT_DIR/alive.txt"
 katana -list "$OUTPUT_DIR/alive.txt" -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
 
-# Trufflehog 掃描 JS Secrets
+# Trufflehog JS Secrets
 grep ".js" "$OUTPUT_DIR/urls.txt" | sort -u > "$OUTPUT_DIR/js_urls.txt"
 trufflehog pipeline --file="$OUTPUT_DIR/js_urls.txt" --only-verified > "$OUTPUT_DIR/secrets/js_secrets.txt" | notify -p discord
 
