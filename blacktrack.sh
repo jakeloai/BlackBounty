@@ -3,105 +3,97 @@
 # --- Help Menu ---
 show_help() {
     echo "Usage: ./blacktrack.sh [options]"
-    echo ""
     echo "Options:"
-    echo "  -r <file>    Root Domain file (Directly to httpx, skips Subfinder)"
-    echo "  -s <file>    Subdomain file (Runs Subfinder for wildcard discovery)"
-    echo "  -h, --help   Show this help message"
+    echo "  -r <file>    Root Domain file (Directly to httpx)"
+    echo "  -s <file>    Subdomain file (Target for Amass/Subfinder)"
+    echo "  -w <file>    Wordlist for Amass brute forcing"
+    echo "  -h           Show help"
     exit 0
 }
 
 # --- Argument Parsing ---
-ROOT_FILE=""
-SUB_FILE=""
-while getopts "r:s:h" opt; do
+WORDLIST="/usr/share/wordlists/amass/subdomains-top1mil.txt" # 預設路徑
+while getopts "r:s:w:h" opt; do
     case $opt in
         r) ROOT_FILE=$OPTARG ;;
         s) SUB_FILE=$OPTARG ;;
+        w) WORDLIST=$OPTARG ;;
         h) show_help ;;
         *) show_help ;;
     esac
 done
 
-if [[ -z "$ROOT_FILE" && -z "$SUB_FILE" ]]; then
-    echo "[!] Error: You must provide either -r or -s file."
-    show_help
-fi
+if [[ -z "$ROOT_FILE" && -z "$SUB_FILE" ]]; then show_help; fi
 
 # --- Initialization ---
 DATE=$(date +%Y%m%d_%H%M)
-OUTPUT_DIR="recon_$DATE"
-mkdir -p "$OUTPUT_DIR"
+OUTPUT_DIR="money_recon_$DATE"
+mkdir -p "$OUTPUT_DIR/secrets" "$OUTPUT_DIR/amass_raw"
 
-ALL_TARGETS="$OUTPUT_DIR/all_target.txt"
-NAABU_PORTS="$OUTPUT_DIR/naabu_ports.txt"
-ALIVE_TARGETS="$OUTPUT_DIR/all_alive_targets.txt"
-FEROX_OUT="$OUTPUT_DIR/ferox_results.txt"
-CLEAN_FEROX="$OUTPUT_DIR/clean_ferox.txt"
-CRAWLED_URLS="$OUTPUT_DIR/all_crawled_urls.txt"
-FINAL_URLS="$OUTPUT_DIR/final_urls_combined.txt"
-FINAL_SHUFFLED="$OUTPUT_DIR/alive_urls_shuffled.txt"
-NUCLEI_RESULT="$OUTPUT_DIR/nuclei_result.txt"
-SUBFINDER_OUT="$OUTPUT_DIR/subdomain_result.txt"
-
-# --- Phase 1: Subdomain Enumeration ---
+# --- Phase 0: Amass Deep Enumeration (The Beginning) ---
 if [[ -n "$SUB_FILE" ]]; then
-    echo "[*] Phase 1: Running Subfinder..."
-    subfinder -dL "$SUB_FILE" -silent -o "$SUBFINDER_OUT"
+    echo "[*] Phase 0: Starting Amass Brute Force & Enum..." | notify -p discord
+    # 遍歷文件入面嘅 domain 行 Amass
+    while read -r domain; do
+        [ -z "$domain" ] && continue
+        echo "[>] Enumerating: $domain"
+        # -brute: 強力暴力破解, -d: 指定域名, -oA: 輸出所有格式
+        amass enum -d "$domain" -brute -w "$WORDLIST" -oA "$OUTPUT_DIR/amass_raw/${domain}_full"
+    done < "$SUB_FILE"
+    
+    # 提取所有搵到嘅 subdomains
+    cat "$OUTPUT_DIR/amass_raw/"*.txt | sort -u > "$OUTPUT_DIR/amass_subs.txt"
+    echo "[+] Amass finished. Found $(wc -l < "$OUTPUT_DIR/amass_subs.txt") subdomains." | notify -p discord
 fi
 
-# --- Phase 2: Merge & Port Scanning ---
+# --- Phase 1: Subfinder & Cloud Discovery ---
+if [[ -n "$SUB_FILE" ]]; then
+    echo "[*] Phase 1: Running Subfinder & Cloud Enum..."
+    subfinder -dL "$SUB_FILE" -silent -o "$OUTPUT_DIR/subfinder_subs.txt"
+    
+    # 賺錢功能 1: Cloud Storage Leakage
+    FIRST_DOMAIN=$(head -n 1 "$SUB_FILE")
+    cloud_enum -k "$FIRST_DOMAIN" -l "$OUTPUT_DIR/buckets.txt" | notify -p discord -bulk
+fi
+
+# --- Phase 2: Merge & Port Scan ---
 echo "[*] Phase 2: Merging & Port Scanning..."
-if [[ -n "$ROOT_FILE" && -n "$SUB_FILE" ]]; then
-    cat "$ROOT_FILE" "$SUBFINDER_OUT" | sort -u > "$ALL_TARGETS"
-elif [[ -n "$ROOT_FILE" ]]; then
-    sort -u "$ROOT_FILE" > "$ALL_TARGETS"
-else
-    sort -u "$SUBFINDER_OUT" > "$ALL_TARGETS"
+cat "$ROOT_FILE" "$OUTPUT_DIR/amass_subs.txt" "$OUTPUT_DIR/subfinder_subs.txt" 2>/dev/null | sort -u > "$OUTPUT_DIR/all_targets.txt"
+naabu -list "$OUTPUT_DIR/all_targets.txt" -top-ports 1000 -silent -o "$OUTPUT_DIR/naabu.txt" | notify -p discord -bulk
+
+# --- Phase 3: Probing & 403 Bypass ---
+echo "[*] Phase 3: Probing & 403 Bypass..."
+cat "$OUTPUT_DIR/all_targets.txt" "$OUTPUT_DIR/naabu.txt" | sort -u > "$OUTPUT_DIR/to_httpx.txt"
+httpx-toolkit -l "$OUTPUT_DIR/to_httpx.txt" -fc 404 -silent -o "$OUTPUT_DIR/alive.txt"
+
+# 賺錢功能 2: 403 Bypass 自動化
+grep "403" "$OUTPUT_DIR/alive.txt" | xargs -I % curl -s -I -H "X-Forwarded-For: 127.0.0.1" % | grep "200 OK" && echo "[!] 403 Bypass Found on %" | notify -p discord
+
+# --- Phase 4: JS Secret Mining (Trufflehog) ---
+echo "[*] Phase 4: Crawling & Secret Mining..."
+katana -list "$OUTPUT_DIR/alive.txt" -jc -kf all -d 3 -fs rdn -o "$OUTPUT_DIR/urls.txt"
+
+# 賺錢功能 3: Trufflehog 掃描 JS Secrets
+grep ".js" "$OUTPUT_DIR/urls.txt" | sort -u > "$OUTPUT_DIR/js_urls.txt"
+trufflehog pipeline --file="$OUTPUT_DIR/js_urls.txt" --only-verified > "$OUTPUT_DIR/secrets/js_secrets.txt"
+if [ -s "$OUTPUT_DIR/secrets/js_secrets.txt" ]; then
+    echo "[!!!] VERIFIED SECRETS FOUND!" | notify -p discord
+    cat "$OUTPUT_DIR/secrets/js_secrets.txt" | notify -p discord
 fi
 
-naabu -list "$ALL_TARGETS" -top-ports 1000 -silent -o "$NAABU_PORTS" | notify -p discord -bulk
-cat "$ALL_TARGETS" "$NAABU_PORTS" 2>/dev/null | sort -u > "$OUTPUT_DIR/combined_for_httpx.txt"
-
-# --- Phase 3: Probing (httpx) ---
-echo "[*] Phase 3: Probing alive hosts..."
-httpx-toolkit -l "$OUTPUT_DIR/combined_for_httpx.txt" -fc 404,400 -silent -o "$ALIVE_TARGETS"
-
-if [ ! -s "$ALIVE_TARGETS" ]; then
-    echo "[!] No alive targets found. Exiting."
-    exit 0
-fi
-
-# --- Phase 4: Directory Fuzzing (Feroxbuster) ---
-echo "[*] Phase 4: Fuzzing directories with Feroxbuster..."
-cat "$ALIVE_TARGETS" | feroxbuster --stdin --smart --unique --no-recursion --random-agent -s 200 --silent \
-    -x php,aspx,jsp,env,bak,zip,git,config -o "$FEROX_OUT"
-
-grep -aoE "https?://[a-zA-Z0-9\./\?&%\=\-\_:]+" "$FEROX_OUT" | sort -u > "$CLEAN_FEROX"
-
-# --- Phase 5: Crawling (Katana) ---
-echo "[*] Phase 5: Deep crawling with Katana..."
-katana -list "$ALIVE_TARGETS" -silent -jc -kf all -d 3 -fs rdn -o "$CRAWLED_URLS"
-
-# --- Phase 6: Data Consolidation & Stealth Prep ---
-echo "[*] Phase 6: Merging all discovered URLs & Shuffling..."
-
-cat "$ALIVE_TARGETS" "$CRAWLED_URLS" "$CLEAN_FEROX" | sort -u > "$FINAL_URLS"
-
-shuf "$FINAL_URLS" > "$FINAL_SHUFFLED"
-
-# --- Phase 7: Vulnerability Scanning (Nuclei) ---
-echo "[*] Phase 7: Running Nuclei on all discovered endpoints..."
-cat "$FINAL_SHUFFLED" | nuclei \
+# --- Phase 5: High-ROI Nuclei Scanning ---
+echo "[*] Phase 5: Running Nuclei (Money Templates)..."
+cat "$OUTPUT_DIR/urls.txt" | nuclei \
     -as \
+    -t takeovers/ \
+    -t cves/2024/,cves/2025/,cves/2026/ \
+    -t default-logins/ \
+    -t exposures/ \
     -severity medium,high,critical \
-    -rl 100 -bs 25 -c 15 \
-    -et tags/dos \
-    -silent -stream -o "$NUCLEI_RESULT" | notify -p discord -bulk
+    -rl 50 -bs 15 -silent -o "$OUTPUT_DIR/nuclei_bounty.txt" | notify -p discord -bulk
 
-# --- Phase 8: Full Recon (BBOT) ---
-echo "[*] Phase 8: Running BBOT Kitchen Sink (Heavy Scanning)..."
+# --- Phase 6: Heavy Recon (BBOT) ---
+echo "[*] Phase 6: BBOT Final Sweep..."
+bbot -t "$OUTPUT_DIR/all_targets.txt" -p kitchen-sink --allow-deadly --force | notify -p discord -bulk
 
-bbot -t "$FINAL_SHUFFLED" -p kitchen-sink --allow-deadly --force | notify -p discord -bulk
-
-echo -e "\n[+] Full Pipeline Finished. Results saved in: $OUTPUT_DIR"
+echo "[+] Done! All results in $OUTPUT_DIR" | notify -p discord
