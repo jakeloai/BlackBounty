@@ -13,7 +13,7 @@ show_help() {
 }
 
 # --- Default Config ---
-WORDLIST="/usr/share/wordlists/amass/subdomains-top1mil.txt"
+WORDLIST="usr/share/seclists/Discovery/DNS/bug-bounty-program-subdomains-trickest-inventory.txt"
 AMASS_FILE=""; ROOT_FILE=""; SUB_FILE=""
 
 while getopts "r:s:a:w:h" opt; do
