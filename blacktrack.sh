@@ -99,7 +99,7 @@ nuclei -l "$OUTPUT_DIR/assets/urls_filtered.txt" \
   -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36" \
   -rl 50 -c 15 -timeout 6 -retries 2 -mhe 10 \
   -severity low,medium,high,critical \
-  -stats -si 15 \
+  -silent -si 15 \
   -o "$OUTPUT_DIR/nuclear_results.txt" | notify -p discord -bulk -silent
 
 # --- Phase 4: BBOT Final Sweep ---
