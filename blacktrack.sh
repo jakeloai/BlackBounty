@@ -72,7 +72,7 @@ httpx-toolkit -l "$OUTPUT_DIR/assets/total_domains.txt" -silent -o "$OUTPUT_DIR/
 if [[ -s "$OUTPUT_DIR/assets/alive.txt" ]]; then
     echo "[*] Starting Katana Crawling..."
     # Run Katana to raw file first to prevent pipeline breakage
-    katana -list "$OUTPUT_DIR/assets/alive.txt" -jc -kf all -d 3 -fs rdn -silent -con 30 -o "$OUTPUT_DIR/assets/urls_raw.txt"
+    katana -list "$OUTPUT_DIR/assets/alive.txt" -jc -kf all -d 3 -fs rdn -silent -o "$OUTPUT_DIR/assets/urls_raw.txt"
 
     # Apply noise filter
     if [[ -s "$OUTPUT_DIR/assets/urls_raw.txt" ]]; then
