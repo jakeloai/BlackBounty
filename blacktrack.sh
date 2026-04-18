@@ -1,5 +1,5 @@
 #!/bin/bash
-# blacktrack.sh - v6.5 Master Edition (Smart Scoping / Direct Mode)
+# blacktrack.sh - v6.5 Master Edition (Enhanced Stability / Direct Mode)
 
 show_help() {
     echo "Usage: ./blacktrack.sh [options]"
@@ -8,7 +8,7 @@ show_help() {
     echo "  -s <file>    Subdomain targets (Enables Passive Discovery)"
     echo "  -a <file>    Amass deep brute targets"
     echo "  -w <file>    Wordlist for Amass"
-    echo "  -h           Show help"
+    echo "  -h            Show help"
     exit 0
 }
 
@@ -44,21 +44,24 @@ if [[ -n "$SUB_FILE" ]]; then
     # 1a. Passive Discovery via Subfinder
     subfinder -dL "$SUB_FILE" -all -silent -o "$OUTPUT_DIR/assets/passive_subs.txt"
 
-    # 1b. Deep Brute Force via Amass (Only if -a is also provided)
+    # 1b. Deep Brute Force via Amass
     if [[ -n "$AMASS_FILE" ]]; then
         echo "[*] Running Amass Deep Brute Force..."
         amass enum -brute -d "$AMASS_FILE" -w "$WORDLIST" -o "$OUTPUT_DIR/assets/amass_subs.txt"
     fi
 
-    # 1c. Discovery via TLSX
-    cat "$ROOT_FILE" "$OUTPUT_DIR/assets/passive_subs.txt" "$OUTPUT_DIR/assets/amass_subs.txt" 2>/dev/null | \
-    tlsx -san -ro -silent -o "$OUTPUT_DIR/assets/shadow_assets.txt"
+    # 1c. Discovery via TLSX (Safely handle potentially missing files)
+    touch "$OUTPUT_DIR/assets/passive_subs.txt" "$OUTPUT_DIR/assets/amass_subs.txt"
+    [[ -n "$ROOT_FILE" ]] && cat "$ROOT_FILE" > "$OUTPUT_DIR/assets/tmp_all.txt"
+    cat "$OUTPUT_DIR/assets/passive_subs.txt" "$OUTPUT_DIR/assets/amass_subs.txt" >> "$OUTPUT_DIR/assets/tmp_all.txt"
+    
+    tlsx -l "$OUTPUT_DIR/assets/tmp_all.txt" -san -ro -silent -o "$OUTPUT_DIR/assets/shadow_assets.txt"
 
     # Consolidate all domains
-    cat "$ROOT_FILE" "$OUTPUT_DIR/assets/passive_subs.txt" "$OUTPUT_DIR/assets/amass_subs.txt" "$OUTPUT_DIR/assets/shadow_assets.txt" 2>/dev/null | sort -u > "$OUTPUT_DIR/assets/total_domains.txt"
+    cat "$OUTPUT_DIR/assets/tmp_all.txt" "$OUTPUT_DIR/assets/shadow_assets.txt" 2>/dev/null | sort -u > "$OUTPUT_DIR/assets/total_domains.txt"
+    rm "$OUTPUT_DIR/assets/tmp_all.txt"
 else
     echo "[*] Phase 1: Strict Scope Mode (-r only). Skipping enumeration..."
-    # If only -r is provided, total_domains is just the root file
     sort -u "$ROOT_FILE" > "$OUTPUT_DIR/assets/total_domains.txt"
 fi
 
@@ -66,13 +69,30 @@ fi
 echo "[*] Phase 2: Probing and Optimized Crawling..."
 httpx-toolkit -l "$OUTPUT_DIR/assets/total_domains.txt" -silent -o "$OUTPUT_DIR/assets/alive.txt"
 
-# Katana Crawling
-katana -list "$OUTPUT_DIR/assets/alive.txt" -jc -kf all -d 3 -fs rdn -silent -con 30 | \
-grep -avE "\.(jpg|jpeg|gif|png|ico|css|svg|woff|woff2|ttf|otf|eot|mp3|mp4|avi|flv|wmv|pdf|zip|gz|rar)$" \
-> "$OUTPUT_DIR/assets/urls_filtered.txt"
+if [[ -s "$OUTPUT_DIR/assets/alive.txt" ]]; then
+    echo "[*] Starting Katana Crawling..."
+    # Run Katana to raw file first to prevent pipeline breakage
+    katana -list "$OUTPUT_DIR/assets/alive.txt" -jc -kf all -d 3 -fs rdn -silent -con 30 -o "$OUTPUT_DIR/assets/urls_raw.txt"
+
+    # Apply noise filter
+    if [[ -s "$OUTPUT_DIR/assets/urls_raw.txt" ]]; then
+        grep -avE "\.(jpg|jpeg|gif|png|ico|css|svg|woff|woff2|ttf|otf|eot|mp3|mp4|avi|flv|wmv|pdf|zip|gz|rar)$" \
+        "$OUTPUT_DIR/assets/urls_raw.txt" | sort -u > "$OUTPUT_DIR/assets/urls_filtered.txt"
+    fi
+
+    # Fallback: If Katana finds nothing or filter kills everything, use alive.txt
+    if [[ ! -s "$OUTPUT_DIR/assets/urls_filtered.txt" ]]; then
+        echo "[!] Katana output empty or filtered. Falling back to alive.txt for Nuclei..."
+        cp "$OUTPUT_DIR/assets/alive.txt" "$OUTPUT_DIR/assets/urls_filtered.txt"
+    fi
+else
+    echo "[!] No alive assets found. Skipping Phase 2 & 3."
+    exit 1
+fi
 
 # --- Phase 3: Nuclear Nuclei Scan ---
-echo "[*] Phase 3: Launching Direct Nuclear Nuclei Attack..."
+TARGET_COUNT=$(wc -l < "$OUTPUT_DIR/assets/urls_filtered.txt")
+echo "[*] Phase 3: Launching Direct Nuclear Nuclei Attack on $TARGET_COUNT targets..."
 nuclei -l "$OUTPUT_DIR/assets/urls_filtered.txt" \
   -t ~/nuclei-templates/ \
   -tlsi \
@@ -103,9 +123,12 @@ echo "[*] Phase 5: Generating Markdown Report..."
     echo "## 2. Critical/High Findings (Nuclei)"
     echo "| Severity | Template | Target | Match |"
     echo "| :--- | :--- | :--- | :--- |"
-    grep -E "critical|high" "$OUTPUT_DIR/nuclear_results.txt" | awk '{print "| " $3 " | " $2 " | " $4 " | " $6 " |"}'
+    if [[ -f "$OUTPUT_DIR/nuclear_results.txt" ]]; then
+        grep -E "critical|high" "$OUTPUT_DIR/nuclear_results.txt" | awk '{print "| " $3 " | " $2 " | " $4 " | " $6 " |"}'
+    fi
     echo ""
 } > "$REPORT_FILE"
 
 echo "[+] Scan Complete. Report: $REPORT_FILE"
-echo "BlackTrack Direct Scan Finished. Critical Found: $(grep -cE 'critical|high' "$OUTPUT_DIR/nuclear_results.txt")" | notify -p discord -silent
+CRIT_COUNT=$(grep -cE 'critical|high' "$OUTPUT_DIR/nuclear_results.txt" 2>/dev/null || echo 0)
+echo "BlackTrack Direct Scan Finished. Critical Found: $CRIT_COUNT" | notify -p discord -silent
