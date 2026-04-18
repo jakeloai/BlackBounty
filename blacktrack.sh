@@ -13,7 +13,7 @@ show_help() {
 }
 
 # --- Default Config ---
-WORDLIST="usr/share/seclists/Discovery/DNS/bug-bounty-program-subdomains-trickest-inventory.txt"
+WORDLIST="/usr/share/seclists/Discovery/DNS/bug-bounty-program-subdomains-trickest-inventory.txt"
 AMASS_FILE=""; ROOT_FILE=""; SUB_FILE=""
 
 while getopts "r:s:a:w:h" opt; do
@@ -47,7 +47,7 @@ if [[ -n "$SUB_FILE" ]]; then
     # 1b. Deep Brute Force via Amass
     if [[ -n "$AMASS_FILE" ]]; then
         echo "[*] Running Amass Deep Brute Force..."
-        amass enum -brute -d "$AMASS_FILE" -w "$WORDLIST" -o "$OUTPUT_DIR/assets/amass_subs.txt"
+        amass enum -brute -df "$AMASS_FILE" -w "$WORDLIST" -o "$OUTPUT_DIR/assets/amass_subs.txt"
     fi
 
     # 1c. Discovery via TLSX (Safely handle potentially missing files)
